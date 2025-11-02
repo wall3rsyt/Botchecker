@@ -47,4 +47,4 @@ Aan de rechterkant zie je een "join URL", waar het laatste deel de **Server ID**
 - Opvallende fake speler markeringen
 
 Deze website is niet verbonden met FiveM of servers.  
-Gemaakt door [igorovh](https://github.com/igorovh) met AI verbeteringen.
+Gemaakt door [wall3rs](https://github.com/wall3rs) met AI verbeteringen.
