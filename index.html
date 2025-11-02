@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>FiveM AI BotChecker</title>
+  <title>🤖 FiveM AI BotChecker</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     body {
       font-family: 'Segoe UI', Arial, sans-serif;
@@ -12,13 +13,18 @@
       text-align: center;
       padding: 40px;
     }
-    h1 {
-      color: #00c3ff;
-      margin-bottom: 10px;
+    h1 { color: #00c3ff; margin-bottom: 10px; }
+    p { color: #bbb; }
+    input, button {
+      padding: 10px;
+      font-size: 15px;
+      margin: 5px;
+      border-radius: 4px;
+      border: none;
     }
-    p {
-      color: #bbb;
-    }
+    input { width: 250px; background: #222; color: #fff; }
+    button { background: #0af; color: #000; cursor: pointer; }
+    button:hover { background: #08f; }
     table {
       width: 95%;
       margin: 20px auto;
@@ -38,41 +44,11 @@
       font-size: 13px;
       letter-spacing: 1px;
     }
-    tr:hover {
-      background: #1b1b1b;
-    }
-    td {
-      color: #ddd;
-    }
-    input, button {
-      padding: 10px;
-      font-size: 15px;
-      margin: 5px;
-      border-radius: 4px;
-      border: none;
-    }
-    input {
-      width: 250px;
-      background: #222;
-      color: #fff;
-    }
-    button {
-      background: #0af;
-      color: #000;
-      cursor: pointer;
-    }
-    button:hover {
-      background: #08f;
-    }
-    #loading {
-      margin-top: 20px;
-      color: #999;
-    }
-    footer {
-      margin-top: 50px;
-      color: #555;
-      font-size: 14px;
-    }
+    tr:hover { background: #1b1b1b; }
+    td { color: #ddd; }
+    #loading { margin-top: 20px; color: #999; }
+    canvas { max-width: 300px; margin: 0 auto; display: block; }
+    footer { margin-top: 50px; color: #555; font-size: 14px; }
   </style>
 </head>
 <body>
@@ -96,6 +72,7 @@
         <th>Echte spelers</th>
         <th>Bots</th>
         <th>Bot (%)</th>
+        <th>Grafiek</th>
       </tr>
     </thead>
     <tbody id="resultsBody"></tbody>
@@ -106,31 +83,28 @@
   </footer>
 
   <script>
-    // === AI-logica voor botdetectie ===
     function aiBotScore(player) {
       let score = 0;
-      const name = player.name?.toLowerCase() || "";
+      const name = (player.name || "").toLowerCase();
       if (!player.identifiers || player.identifiers.length === 0) score += 1.5;
       if (name.includes("player") || name.includes("new") || name.length < 3) score += 1.0;
-      player.identifiers?.forEach(id => {
+      (player.identifiers || []).forEach(id => {
         if (id.startsWith("steam:") && id.length < 15) score += 0.5;
         if (id.startsWith("license:") && id.length < 10) score += 0.5;
       });
       return score;
     }
 
-    function aiIsBot(player) {
-      return aiBotScore(player) >= 2.0;
-    }
+    function aiIsBot(player) { return aiBotScore(player) >= 2.0; }
 
     async function fetchServerList() {
-      const res = await fetch("https://servers.fivem.net/api/servers/getServers?limit=300&format=json");
+      const res = await fetch("https://servers-frontend.fivem.net/api/servers/summary/");
       const data = await res.json();
-      return data?.servers || [];
+      return data || [];
     }
 
     async function fetchServerDetails(cfx) {
-      const res = await fetch("https://servers.fivem.net/api/servers/getServerDetails?cfxServerKey=" + cfx);
+      const res = await fetch("https://servers-frontend.fivem.net/api/servers/single/" + cfx);
       const data = await res.json();
       return data?.Data || null;
     }
@@ -149,15 +123,15 @@
         let filtered = servers;
         if (query) {
           filtered = servers.filter(s =>
-            s.cfxServerKey.toLowerCase().includes(query.toLowerCase()) ||
-            s.hostname.toLowerCase().includes(query.toLowerCase())
+            (s.cfxServerKey && s.cfxServerKey.toLowerCase().includes(query.toLowerCase())) ||
+            (s.hostname && s.hostname.toLowerCase().includes(query.toLowerCase()))
           );
         }
 
-        filtered.sort((a, b) => b.clients - a.clients);
-
+        filtered.sort((a,b) => (b.clients || 0) - (a.clients || 0));
         const top = filtered.slice(0, 10);
         let rank = 1;
+
         for (const s of top) {
           const server = await fetchServerDetails(s.cfxServerKey);
           if (!server || !server.players) continue;
@@ -165,11 +139,11 @@
           const players = server.players || [];
           let bots = 0;
           players.forEach(p => { if (aiIsBot(p)) bots++; });
-
           const real = players.length - bots;
           const botPercent = ((bots / (players.length || 1)) * 100).toFixed(1);
 
           const row = document.createElement("tr");
+          const canvasId = `chart-${rank}`;
           row.innerHTML = `
             <td>${rank}</td>
             <td>${server.hostname || s.hostname}</td>
@@ -178,8 +152,27 @@
             <td style="color:#0f0;">${real}</td>
             <td style="color:#f33;">${bots}</td>
             <td>${botPercent}%</td>
+            <td><canvas id="${canvasId}"></canvas></td>
           `;
           body.appendChild(row);
+
+          // Grafiek toevoegen
+          new Chart(document.getElementById(canvasId).getContext('2d'), {
+            type: 'doughnut',
+            data: {
+              labels: ['Echte spelers', 'Bots'],
+              datasets: [{
+                data: [real, bots],
+                backgroundColor: ['#0f0', '#f33']
+              }]
+            },
+            options: {
+              plugins: { legend: { display: false } },
+              responsive: true,
+              maintainAspectRatio: false
+            }
+          });
+
           rank++;
         }
 
