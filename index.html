@@ -33,8 +33,9 @@
       border: none;
     }
     input { width: 250px; background: #222; color: #fff; }
-    button { background: #0af; color: #000; cursor: pointer; }
+    button { background: #0af; color: #000; cursor: pointer; font-weight: bold; }
     button:hover { background: #08f; }
+    button:disabled { background: #555; cursor: not-allowed; }
     table {
       width: 95%;
       margin: 20px auto;
@@ -77,6 +78,13 @@
     .dutch-flag {
       font-size: 18px;
     }
+    .server-link {
+      color: #0af;
+      text-decoration: none;
+    }
+    .server-link:hover {
+      text-decoration: underline;
+    }
   </style>
 </head>
 <body>
@@ -84,8 +92,9 @@
   <p>Bekijk hieronder de top 10 Nederlandse FiveM servers met een schatting van echte en neppe spelers.</p>
 
   <div>
-    <input id="searchInput" type="text" placeholder="Zoek op servernaam of CFX-code..." />
-    <button onclick="search()">Zoeken</button>
+    <input id="searchInput" type="text" placeholder="Zoek op servernaam of endpoint..." />
+    <button onclick="search()" id="searchBtn">Zoeken</button>
+    <button onclick="loadTopServers()" id="refreshBtn">🔄 Vernieuwen</button>
   </div>
 
   <div id="loading">⏳ Nederlandse serverlijst wordt opgehaald...</div>
@@ -95,7 +104,7 @@
       <tr>
         <th>#</th>
         <th>Servernaam</th>
-        <th>CFX Code</th>
+        <th>Endpoint</th>
         <th>Spelers</th>
         <th>Echte spelers</th>
         <th>Bots</th>
@@ -108,12 +117,13 @@
 
   <footer>
     <span class="dutch-flag">🇳🇱</span>
-    <p>Data van <a href="https://servers.fivem.net" target="_blank">FiveM Servers</a> | 
+    <p>Data van <a href="https://github.com/Zuntie/fivem-serverlist-api" target="_blank">FiveM ServerList API</a> | 
     💻 Made by Discord: Wall3rs</p>
   </footer>
 
   <script>
-    const API_URL = "https://fivem-sl-api.onrender.com/fetchServersByLocale/NL-nl";
+    const API_BASE = "https://fivem-sl-api.onrender.com";
+    const LOCALE = "nl-NL"; // Nederlandse locale
     
     // Functie om bot-score te berekenen
     function aiBotScore(player) {
@@ -140,21 +150,37 @@
       return aiBotScore(player) >= 2.0; 
     }
 
-    // Haal Nederlandse servers op via de API
-    async function fetchServerList() {
+    // Haal Nederlandse servers op
+    async function fetchServersByLocale() {
       try {
-        const res = await fetch(API_URL);
+        const response = await fetch(`${API_BASE}/fetchServersByLocale/${LOCALE}`);
         
-        if (!res.ok) {
-          throw new Error(`API HTTP error: ${res.status}`);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        const data = await res.json();
-        console.log("API Response:", data); // Voor debugging
-        return data || [];
+        const data = await response.json();
+        console.log(`✅ ${data.length} Nederlandse servers opgehaald`);
+        return data;
       } catch (err) {
-        console.error("Fout bij het ophalen van serverlijst:", err);
+        console.error("❌ Fout bij het ophalen van servers:", err);
         throw err;
+      }
+    }
+
+    // Haal specifieke server op via endpoint
+    async function fetchServerByEndpoint(endpoint) {
+      try {
+        const response = await fetch(`${API_BASE}/fetchServerByEndPoint/${endpoint}`);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        return await response.json();
+      } catch (err) {
+        console.error("❌ Fout bij het ophalen van server:", err);
+        return null;
       }
     }
 
@@ -163,63 +189,66 @@
       const loading = document.getElementById("loading");
       const table = document.getElementById("resultsTable");
       const body = document.getElementById("resultsBody");
+      const searchBtn = document.getElementById("searchBtn");
+      const refreshBtn = document.getElementById("refreshBtn");
       
+      // UI reset
       body.innerHTML = "";
       loading.style.display = "block";
       table.style.display = "none";
+      searchBtn.disabled = true;
+      refreshBtn.disabled = true;
       loading.textContent = "⏳ Nederlandse serverlijst wordt opgehaald...";
 
       try {
-        // 1. Haal alle Nederlandse servers op
-        const servers = await fetchServerList();
+        // Haal Nederlandse servers op
+        const servers = await fetchServersByLocale();
         
         if (!servers || servers.length === 0) {
           loading.textContent = "❌ Geen servers gevonden.";
           return;
         }
 
-        console.log(`Totaal aantal servers opgehaald: ${servers.length}`);
-
-        // 2. Filter op zoekopdracht (indien ingevuld)
+        // Filter op zoekopdracht
         let filtered = servers;
         if (query) {
           filtered = servers.filter(s => {
             const endpoint = (s.EndPoint || "").toLowerCase();
-            const hostname = (s.Data && s.Data.hostname) ? s.Data.hostname.toLowerCase() : "";
+            const hostname = (s.Data?.hostname || "").toLowerCase();
             return endpoint.includes(query.toLowerCase()) || hostname.includes(query.toLowerCase());
           });
         }
 
-        // 3. Sorteer op spelersaantal (hoog naar laag)
+        // Filter alleen servers met spelers
+        filtered = filtered.filter(s => s.Data && s.Data.clients > 0);
+
+        // Sorteer op spelersaantal (hoog naar laag)
         filtered.sort((a, b) => {
-          const playersA = (a.Data && a.Data.clients) ? a.Data.clients : 0;
-          const playersB = (b.Data && b.Data.clients) ? b.Data.clients : 0;
+          const playersA = a.Data?.clients || 0;
+          const playersB = b.Data?.clients || 0;
           return playersB - playersA;
         });
 
-        // 4. Neem de top 10
+        // Neem top 10
         const top = filtered.slice(0, 10);
         
         if (top.length === 0) {
           loading.textContent = query 
             ? "❌ Geen servers gevonden met deze zoekopdracht." 
-            : "❌ Geen servers beschikbaar.";
+            : "❌ Geen actieve servers beschikbaar.";
           return;
         }
 
         let rank = 1;
 
-        // 5. Verwerk elke server
+        // Verwerk elke server
         for (const server of top) {
-          if (!server.Data) {
-            console.warn("Server zonder Data gevonden:", server);
-            continue;
-          }
+          if (!server.Data) continue;
 
           const data = server.Data;
           const players = data.players || [];
           const hostname = data.hostname || "Onbekend";
-          const cfxCode = server.EndPoint || "N/A";
+          const endpoint = server.EndPoint || "N/A";
           
           // Bereken bots
           let bots = 0;
@@ -230,22 +259,22 @@
           const real = players.length - bots;
           const botPercent = players.length > 0 ? ((bots / players.length) * 100).toFixed(1) : "0.0";
 
-          // 6. Voeg rij toe aan tabel
+          // Maak tabel rij
           const row = document.createElement("tr");
           const canvasId = `chart-${rank}`;
           row.innerHTML = `
             <td>${rank}</td>
-            <td>${hostname}</td>
-            <td>${cfxCode}</td>
+            <td><a href="fivem://connect/${endpoint}" class="server-link" title="Klik om te verbinden">${hostname}</a></td>
+            <td><code>${endpoint}</code></td>
             <td>${players.length}</td>
-            <td style="color:#0f0;">${real}</td>
-            <td style="color:#f33;">${bots}</td>
+            <td style="color:#0f0;font-weight:bold;">${real}</td>
+            <td style="color:#f33;font-weight:bold;">${bots}</td>
             <td>${botPercent}%</td>
             <td><canvas id="${canvasId}" width="80" height="80"></canvas></td>
           `;
           body.appendChild(row);
 
-          // 7. Voeg grafiek toe
+          // Maak grafiek
           const ctx = document.getElementById(canvasId);
           if (ctx) {
             new Chart(ctx.getContext('2d'), {
@@ -254,14 +283,21 @@
                 labels: ['Echte spelers', 'Bots'],
                 datasets: [{
                   data: [real, bots],
-                  backgroundColor: ['#0f0', '#f33'],
+                  backgroundColor: ['#00ff00', '#ff3333'],
                   borderWidth: 0
                 }]
               },
               options: {
                 plugins: { 
                   legend: { display: false },
-                  tooltip: { enabled: true }
+                  tooltip: { 
+                    enabled: true,
+                    callbacks: {
+                      label: (context) => {
+                        return `${context.label}: ${context.parsed}`;
+                      }
+                    }
+                  }
                 },
                 responsive: true,
                 maintainAspectRatio: true
@@ -272,13 +308,17 @@
           rank++;
         }
 
-        // 8. Toon resultaten
+        // Toon resultaten
         loading.style.display = "none";
         table.style.display = "table";
+        console.log(`✅ Top ${top.length} servers weergegeven`);
         
       } catch (err) {
-        console.error("Fout in loadTopServers():", err);
-        loading.textContent = "❌ Er is een fout opgetreden bij het ophalen van data. Controleer de console voor details.";
+        console.error("❌ Fout in loadTopServers():", err);
+        loading.textContent = "❌ Fout bij het laden van data. Controleer de console (F12) voor details.";
+      } finally {
+        searchBtn.disabled = false;
+        refreshBtn.disabled = false;
       }
     }
 
@@ -288,15 +328,19 @@
       loadTopServers(q);
     }
 
-    // Enter-toets ondersteuning voor zoeken
+    // Event listeners
     document.addEventListener("DOMContentLoaded", () => {
-      document.getElementById("searchInput").addEventListener("keypress", (e) => {
+      const searchInput = document.getElementById("searchInput");
+      
+      // Enter toets support
+      searchInput.addEventListener("keypress", (e) => {
         if (e.key === "Enter") {
           search();
         }
       });
       
-      // Laad automatisch bij opstarten
+      // Auto-load bij opstarten
+      console.log("🚀 FiveM Nederland BotChecker gestart");
       loadTopServers();
     });
   </script>
