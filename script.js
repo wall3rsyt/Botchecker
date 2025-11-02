@@ -1,10 +1,10 @@
-const LOCALE_API = "https://fivem-sl-api.onrender.com/fetchServersByLocale/NL-nl";
-const FIVEM_SINGLE_API = "https://servers-frontend.fivem.net/api/servers/single";
+const BASE_URL = 'https://servers-frontend.fivem.net/api/servers';
+const ALL_SERVERS_URL = `${BASE_URL}/streamRedir/`;
 
 let allServers = [];
 let currentQuery = "";
 
-// Bot score calculation
+// Bot-check functies
 function calculateBotScore(player) {
   let score = 0;
   const name = (player.name || "").toLowerCase();
@@ -19,12 +19,12 @@ function calculateBotScore(player) {
   let hasLicense = false;
 
   identifiers.forEach(id => {
-    if (id.startsWith("steam:")) { hasSteam = true; if(id.length < 20) score += 0.5; }
-    if (id.startsWith("license:")) { hasLicense = true; if(id.length < 20) score += 0.5; }
-    if (id.startsWith("ip:")) score += 0.3;
+    if (id.startsWith("steam:")) { hasSteam = true; if(id.length<20) score+=0.5; }
+    if (id.startsWith("license:")) { hasLicense = true; if(id.length<20) score+=0.5; }
+    if (id.startsWith("ip:")) score+=0.3;
   });
 
-  if (!hasSteam && !hasLicense && identifiers.length > 0) score += 1.0;
+  if(!hasSteam && !hasLicense && identifiers.length>0) score+=1.0;
 
   return score;
 }
@@ -33,38 +33,13 @@ function isBot(player) {
   return calculateBotScore(player) >= 2.0;
 }
 
-// Fetch all NL servers from locale API
-async function fetchServerList() {
-  try {
-    const res = await fetch(LOCALE_API);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
-  } catch (err) {
-    console.error(err);
-    return [];
-  }
-}
-
-// Fetch single server details
-async function fetchServerDetails(endpoint) {
-  try {
-    const res = await fetch(`${FIVEM_SINGLE_API}/${endpoint}`);
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.Data || null;
-  } catch (err) {
-    console.error(err);
-    return null;
-  }
-}
-
-// Render row in table
+// Render tabelrij
 function renderServerRow(server, rank) {
   const tbody = document.getElementById("tableBody");
   const canvasId = `chart-${rank}`;
   let botClass = "low-bots";
-  if (server.botPercent > 50) botClass = "high-bots";
-  else if (server.botPercent > 20) botClass = "medium-bots";
+  if(server.botPercent>50) botClass="high-bots";
+  else if(server.botPercent>20) botClass="medium-bots";
 
   const row = document.createElement("tr");
   row.innerHTML = `
@@ -81,29 +56,20 @@ function renderServerRow(server, rank) {
   tbody.appendChild(row);
 
   const ctx = document.getElementById(canvasId);
-  if (ctx && server.totalPlayers > 0) {
+  if(ctx && server.totalPlayers>0){
     new Chart(ctx.getContext('2d'), {
-      type: 'doughnut',
-      data: {
-        labels: ['Echt','Bots'],
-        datasets: [{
-          data: [server.realPlayers, server.bots],
-          backgroundColor: ['#00ff00','#ff3333'],
-          borderWidth: 2,
-          borderColor: '#0a0a0a'
-        }]
+      type:'doughnut',
+      data:{
+        labels:['Echt','Bots'],
+        datasets:[{data:[server.realPlayers,server.bots],backgroundColor:['#00ff00','#ff3333'],borderWidth:2,borderColor:'#0a0a0a'}]
       },
-      options: {
-        plugins: { legend: { display: false }, tooltip: { enabled: false } },
-        responsive: true,
-        maintainAspectRatio: true
-      }
+      options:{plugins:{legend:{display:false},tooltip:{enabled:false}},responsive:true,maintainAspectRatio:true}
     });
   }
 }
 
-// Main load function
-async function loadServers(query = "") {
+// Fetch alle servers (stream)
+async function loadServers(query="") {
   const loading = document.getElementById("loading");
   const tableContainer = document.getElementById("tableContainer");
   const statsBar = document.getElementById("statsBar");
@@ -115,80 +81,88 @@ async function loadServers(query = "") {
   tableContainer.style.display = "none";
   statsBar.style.display = "none";
   tbody.innerHTML = "";
-  refreshBtn.disabled = true; 
-  searchBtn.disabled = true;
+  refreshBtn.disabled = true; searchBtn.disabled = true;
   allServers = [];
 
-  const serverList = await fetchServerList();
-  if (!serverList.length) {
-    loading.innerHTML = "<p>❌ Geen Nederlandse servers gevonden</p>";
-    refreshBtn.disabled = false; searchBtn.disabled = false;
-    return;
+  try {
+    const res = await fetch(ALL_SERVERS_URL);
+    if(!res.body) throw new Error("Geen body stream beschikbaar");
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let rank = 1;
+
+    while(true){
+      const { done, value } = await reader.read();
+      if(done) break;
+
+      const chunk = decoder.decode(value, {stream:true});
+      const lines = chunk.split("\n").filter(l=>l.trim());
+      for(const line of lines){
+        try {
+          const srv = JSON.parse(line);
+          const data = srv.Data;
+          if(!data || !data.vars || data.vars.locale !== "NL-nl") continue;
+
+          const players = data.players || [];
+          let bots=0, real=0;
+          players.forEach(p=>isBot(p)?bots++:real++);
+          const total = players.length;
+          const botPercent = total>0 ? Math.round((bots/total)*100) : 0;
+
+          const serverObj = {
+            hostname: data.hostname || "Onbekend",
+            EndPoint: srv.EndPoint,
+            totalPlayers: total,
+            realPlayers: real,
+            bots: bots,
+            botPercent: botPercent
+          };
+
+          // filter op zoekterm
+          if(query && !(srv.EndPoint.toLowerCase().includes(query.toLowerCase()) || (data.hostname||"").toLowerCase().includes(query.toLowerCase()))) continue;
+
+          allServers.push(serverObj);
+          renderServerRow(serverObj, rank);
+          rank++;
+        } catch(e){
+          console.error("Fout bij verwerken server line:", e);
+        }
+      }
+    }
+
+    if(allServers.length===0){
+      loading.innerHTML="<p>❌ Geen Nederlandse servers gevonden</p>";
+    } else {
+      loading.style.display="none";
+      tableContainer.style.display="block";
+      statsBar.style.display="flex";
+
+      const totalPlayers = allServers.reduce((a,s)=>a+s.totalPlayers,0);
+      const realPlayers = allServers.reduce((a,s)=>a+s.realPlayers,0);
+      const totalBots = allServers.reduce((a,s)=>a+s.bots,0);
+
+      document.getElementById("totalServers").textContent = allServers.length;
+      document.getElementById("analyzedServers").textContent = allServers.length;
+      document.getElementById("totalPlayers").textContent = totalPlayers;
+      document.getElementById("realPlayers").textContent = realPlayers;
+      document.getElementById("totalBots").textContent = totalBots;
+    }
+
+  } catch(err){
+    console.error(err);
+    loading.innerHTML = "<p>❌ Fout bij het ophalen van servers</p>";
   }
 
-  let filtered = serverList;
-  if (query) {
-    filtered = serverList.filter(s => 
-      (s.EndPoint || "").toLowerCase().includes(query.toLowerCase()) ||
-      (s.Data?.hostname || "").toLowerCase().includes(query.toLowerCase())
-    );
-  }
-
-  // Alleen actieve servers
-  filtered = filtered.filter(s => s.Data && (s.Data.clients > 0 || (s.Data.players && s.Data.players.length > 0)));
-  filtered.sort((a,b) => (b.Data?.clients || b.Data?.players?.length || 0) - (a.Data?.clients || a.Data?.players?.length || 0));
-
-  const top = filtered.slice(0, 20);
-  if (!top.length) { loading.innerHTML = "<p>❌ Geen actieve servers gevonden</p>"; return; }
-
-  document.getElementById("totalServers").textContent = top.length;
-
-  let analyzed = 0, totalPlayers = 0, realPlayers = 0, totalBots = 0;
-
-  // Parallel fetch van server details
-  const serverDetails = await Promise.all(top.map(s => fetchServerDetails(s.EndPoint)));
-
-  for (let i = 0; i < top.length; i++) {
-    const s = top[i];
-    const data = serverDetails[i];
-    if (!data) continue;
-
-    const players = data.players || [];
-    let bots = 0, real = 0;
-    players.forEach(p => isBot(p) ? bots++ : real++);
-    const total = players.length;
-
-    totalPlayers += total; realPlayers += real; totalBots += bots; analyzed++;
-
-    const botPercent = total > 0 ? Math.round((bots / total) * 100) : 0;
-    const serverObj = {
-      hostname: data.hostname || "Onbekend",
-      EndPoint: s.EndPoint,
-      totalPlayers: total,
-      realPlayers: real,
-      bots: bots,
-      botPercent: botPercent
-    };
-    allServers.push(serverObj);
-    renderServerRow(serverObj, i + 1);
-  }
-
-  loading.style.display = "none";
-  tableContainer.style.display = "block";
-  statsBar.style.display = "flex";
-  document.getElementById("analyzedServers").textContent = analyzed;
-  document.getElementById("totalPlayers").textContent = totalPlayers;
-  document.getElementById("realPlayers").textContent = realPlayers;
-  document.getElementById("totalBots").textContent = totalBots;
-
-  refreshBtn.disabled = false; searchBtn.disabled = false;
+  refreshBtn.disabled = false;
+  searchBtn.disabled = false;
 }
 
-function search() {
+function search(){
   currentQuery = document.getElementById("searchInput").value.trim();
   loadServers(currentQuery);
 }
 
-document.getElementById("refreshBtn").addEventListener("click", () => loadServers());
-document.getElementById("searchBtn").addEventListener("click", search);
-window.addEventListener("DOMContentLoaded", () => loadServers());
+document.getElementById("refreshBtn").addEventListener("click",()=>loadServers());
+document.getElementById("searchBtn").addEventListener("click",search);
+window.addEventListener("DOMContentLoaded",()=>loadServers());
