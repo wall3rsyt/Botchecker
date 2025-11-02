@@ -1,7 +1,7 @@
 # FiveM Speler Lijst met AI Fake Detectie
 
 Een geavanceerde website die alle spelers toont die verbonden zijn met een geselecteerde FiveM server, inclusief intelligente detectie van nep- of botspelers.
-Beschikbaar hier: [https://igorovh.github.io/fivem-player-list/](https://igorovh.github.io/fivem-player-list/)
+Beschikbaar hier: [
 
 Deze tool gebruikt de officiële FiveM API endpoint voor nauwkeurige servergegevens:
 
