@@ -6,84 +6,116 @@
   <title>FiveM AI BotChecker</title>
   <style>
     body {
-      font-family: Arial, sans-serif;
-      background: #111;
-      color: #eee;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #0a0a0a;
+      color: #f1f1f1;
       text-align: center;
       padding: 40px;
     }
     h1 {
+      color: #00c3ff;
+      margin-bottom: 10px;
+    }
+    p {
+      color: #bbb;
+    }
+    table {
+      width: 95%;
+      margin: 20px auto;
+      border-collapse: collapse;
+      background: #111;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      padding: 12px;
+      border-bottom: 1px solid #222;
+    }
+    th {
+      background: #161616;
       color: #0af;
+      text-transform: uppercase;
+      font-size: 13px;
+      letter-spacing: 1px;
+    }
+    tr:hover {
+      background: #1b1b1b;
+    }
+    td {
+      color: #ddd;
     }
     input, button {
       padding: 10px;
-      font-size: 16px;
+      font-size: 15px;
       margin: 5px;
+      border-radius: 4px;
+      border: none;
     }
-    table {
-      width: 90%;
-      margin: 30px auto;
-      border-collapse: collapse;
+    input {
+      width: 250px;
       background: #222;
+      color: #fff;
     }
-    th, td {
-      padding: 10px;
-      border: 1px solid #333;
+    button {
+      background: #0af;
+      color: #000;
+      cursor: pointer;
     }
-    th {
-      background: #333;
+    button:hover {
+      background: #08f;
     }
-    tr:hover {
-      background: #282828;
+    #loading {
+      margin-top: 20px;
+      color: #999;
+    }
+    footer {
+      margin-top: 50px;
+      color: #555;
+      font-size: 14px;
     }
   </style>
 </head>
 <body>
-  <h1>🔍 FiveM AI BotChecker</h1>
-  <p>Zoek op <b>CFX-code</b> of <b>servernaam</b> — alles draait lokaal in je browser!</p>
+  <h1>🤖 FiveM AI BotChecker</h1>
+  <p>Bekijk hieronder de top 10 FiveM servers met een schatting van echte en neppe spelers.</p>
 
-  <input id="searchInput" type="text" placeholder="Bijv. roleplay of abc123" />
-  <button onclick="search()">Zoeken</button>
+  <div>
+    <input id="searchInput" type="text" placeholder="Zoek op servernaam of CFX-code..." />
+    <button onclick="search()">Zoeken</button>
+  </div>
 
-  <div id="status"></div>
-  <table id="resultsTable">
+  <div id="loading">⏳ Serverlijst wordt opgehaald...</div>
+
+  <table id="resultsTable" style="display:none;">
     <thead>
       <tr>
+        <th>#</th>
         <th>Servernaam</th>
         <th>CFX Code</th>
         <th>Spelers</th>
+        <th>Echte spelers</th>
+        <th>Bots</th>
         <th>Bot (%)</th>
       </tr>
     </thead>
     <tbody id="resultsBody"></tbody>
   </table>
 
+  <footer>
+    <p>💻 Made by Discord: Wall3rs</p>
+  </footer>
+
   <script>
-    async function fetchServerList() {
-      const res = await fetch("https://servers-frontend.fivem.net/api/servers/");
-      const data = await res.json();
-      return data.Data || [];
-    }
-
-    async function fetchSingleServer(cfxCode) {
-      const res = await fetch("https://servers-frontend.fivem.net/api/servers/single/" + cfxCode);
-      const data = await res.json();
-      return data.Data || null;
-    }
-
-    // Eenvoudige "AI" voor botschatting
+    // === AI-logica voor botdetectie ===
     function aiBotScore(player) {
       let score = 0;
       const name = player.name?.toLowerCase() || "";
-
       if (!player.identifiers || player.identifiers.length === 0) score += 1.5;
-      if (name.includes("player") || name.length < 3) score += 1.0;
-
+      if (name.includes("player") || name.includes("new") || name.length < 3) score += 1.0;
       player.identifiers?.forEach(id => {
         if (id.startsWith("steam:") && id.length < 15) score += 0.5;
         if (id.startsWith("license:") && id.length < 10) score += 0.5;
       });
-
       return score;
     }
 
@@ -91,48 +123,81 @@
       return aiBotScore(player) >= 2.0;
     }
 
-    async function search() {
-      const query = document.getElementById("searchInput").value.trim().toLowerCase();
-      const status = document.getElementById("status");
+    async function fetchServerList() {
+      const res = await fetch("https://servers.fivem.net/api/servers/getServers?limit=300&format=json");
+      const data = await res.json();
+      return data?.servers || [];
+    }
+
+    async function fetchServerDetails(cfx) {
+      const res = await fetch("https://servers.fivem.net/api/servers/getServerDetails?cfxServerKey=" + cfx);
+      const data = await res.json();
+      return data?.Data || null;
+    }
+
+    async function loadTopServers(query = "") {
+      const loading = document.getElementById("loading");
+      const table = document.getElementById("resultsTable");
       const body = document.getElementById("resultsBody");
       body.innerHTML = "";
-      status.textContent = "⏳ Bezig met zoeken...";
+      loading.style.display = "block";
+      table.style.display = "none";
+      loading.textContent = "⏳ Bezig met ophalen van servers...";
 
       try {
-        const list = await fetchServerList();
-        const matches = list.filter(s =>
-          s.id.toLowerCase().includes(query) ||
-          s.Data.hostname.toLowerCase().includes(query)
-        );
+        const servers = await fetchServerList();
+        let filtered = servers;
+        if (query) {
+          filtered = servers.filter(s =>
+            s.cfxServerKey.toLowerCase().includes(query.toLowerCase()) ||
+            s.hostname.toLowerCase().includes(query.toLowerCase())
+          );
+        }
 
-        // Sorteer op meeste spelers
-        matches.sort((a, b) => b.Data.clients - a.Data.clients);
+        filtered.sort((a, b) => b.clients - a.clients);
 
-        const top = matches.slice(0, 10); // alleen top 10
+        const top = filtered.slice(0, 10);
+        let rank = 1;
         for (const s of top) {
-          const serverData = await fetchSingleServer(s.id);
-          const players = serverData.players || [];
+          const server = await fetchServerDetails(s.cfxServerKey);
+          if (!server || !server.players) continue;
+
+          const players = server.players || [];
           let bots = 0;
           players.forEach(p => { if (aiIsBot(p)) bots++; });
 
+          const real = players.length - bots;
           const botPercent = ((bots / (players.length || 1)) * 100).toFixed(1);
 
           const row = document.createElement("tr");
           row.innerHTML = `
-            <td>${serverData.hostname || s.Data.hostname}</td>
-            <td>${s.id}</td>
+            <td>${rank}</td>
+            <td>${server.hostname || s.hostname}</td>
+            <td>${s.cfxServerKey}</td>
             <td>${players.length}</td>
+            <td style="color:#0f0;">${real}</td>
+            <td style="color:#f33;">${bots}</td>
             <td>${botPercent}%</td>
           `;
           body.appendChild(row);
+          rank++;
         }
 
-        status.textContent = `✅ ${matches.length} servers gevonden`;
+        loading.style.display = "none";
+        table.style.display = "table";
       } catch (err) {
         console.error(err);
-        status.textContent = "❌ Er is iets misgegaan.";
+        loading.textContent = "❌ Er is een fout opgetreden bij het ophalen van data.";
       }
     }
+
+    function search() {
+      const q = document.getElementById("searchInput").value.trim();
+      loadTopServers(q);
+    }
+
+    // Laad automatisch top 10 bij start
+    loadTopServers();
   </script>
 </body>
 </html>
