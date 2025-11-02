@@ -98,13 +98,15 @@
     function aiIsBot(player) { return aiBotScore(player) >= 2.0; }
 
     async function fetchServerList() {
-      const res = await fetch("https://servers-frontend.fivem.net/api/servers/summary/");
+      const proxyUrl = "https://corsproxy.io/?" + encodeURIComponent("https://servers-frontend.fivem.net/api/servers/summary/");
+      const res = await fetch(proxyUrl);
       const data = await res.json();
       return data || [];
     }
 
     async function fetchServerDetails(cfx) {
-      const res = await fetch("https://servers-frontend.fivem.net/api/servers/single/" + cfx);
+      const proxyUrl = "https://corsproxy.io/?" + encodeURIComponent("https://servers-frontend.fivem.net/api/servers/single/" + cfx);
+      const res = await fetch(proxyUrl);
       const data = await res.json();
       return data?.Data || null;
     }
