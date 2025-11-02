@@ -1,61 +1,67 @@
 <!DOCTYPE html>
-<html lang="nl">
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>🇳🇱 FiveM Nederland BotChecker</title>
-  <link rel="stylesheet" href="style.css">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>Waiting for Server ID...</title>
+	<link rel="stylesheet" href="css/index.css" />
+	<link id="favicon" rel="shortcut icon" href="https://fivem.net/favicon.png" type="image/x-icon" />
+	<script type="module" src="js/botchecker.js"></script>
 </head>
 <body>
-  <div class="container">
-    <h1>FiveM Nederland BotChecker</h1>
-    <p class="subtitle">Analyseer Nederlandse FiveM servers op bots</p>
+	<!-- Loader -->
+	<div id="loader" class="loader">
+		<div class="loader-spinner"></div>
+	</div>
 
-    <div class="controls">
-      <input type="text" id="searchInput" placeholder="🔍 Zoek op servernaam of endpoint..." onkeypress="if(event.key==='Enter') search()">
-      <button id="searchBtn">Zoeken</button>
-      <button id="refreshBtn">🔄 Vernieuwen</button>
-    </div>
+	<!-- Notification container -->
+	<div id="notification-container" class="notification-container"></div>
 
-    <div class="stats-bar" id="statsBar" style="display:none;">
-      <div class="stat-card"><div class="stat-label">Totaal Servers</div><div class="stat-value" id="totalServers">0</div></div>
-      <div class="stat-card"><div class="stat-label">Geanalyseerd</div><div class="stat-value" id="analyzedServers">0</div></div>
-      <div class="stat-card"><div class="stat-label">Totaal Spelers</div><div class="stat-value" id="totalPlayers">0</div></div>
-      <div class="stat-card"><div class="stat-label">Echte Spelers</div><div class="stat-value" id="realPlayers">0</div></div>
-      <div class="stat-card"><div class="stat-label">Bots</div><div class="stat-value" id="totalBots">0</div></div>
-    </div>
+	<div id="wrapper">
+		<header>
+			<div id="title">
+				<img id="server-icon" src="https://fivem.net/favicon.png" alt="Server Icon" />
+				<span id="server-name">Waiting for Server ID... </span>
+				<span id="server-players" class="players"></span>
+			</div>
+			<div id="server">
+				<input type="text" id="server-id" placeholder="Server ID" />
+				<div id="server-id-button" class="icon" title="Check Server">
+					<img src="img/search.svg" alt="Search" />
+				</div>
+				<div class="icon" title="How to get Server ID?">
+					<a href="https://github.com/igorovh/fivem-player-list/blob/main/README.md#how-to-get-server-id" target="_blank">
+						<img src="img/question-mark.svg" alt="Help" />
+					</a>
+				</div>
+			</div>
+		</header>
 
-    <div id="loading">
-      <div class="loading-spinner"></div>
-      <p>Nederlandse servers worden opgehaald...</p>
-    </div>
+		<section>
+			<div class="controls-wrapper">
+				<input type="text" id="search" placeholder="Search player..." />
+				<div id="refresh-button" class="icon refresh-icon" title="Refresh players">
+					<img src="img/refresh.svg" alt="Refresh" />
+					<span id="refresh-timer">30s</span>
+				</div>
+			</div>
+		</section>
 
-    <div class="table-container" id="tableContainer" style="display:none;">
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Servernaam</th>
-            <th>Endpoint</th>
-            <th>Spelers</th>
-            <th>✅ Echt</th>
-            <th>🤖 Bots</th>
-            <th>Bot %</th>
-            <th>Grafiek</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody id="tableBody"></tbody>
-      </table>
-    </div>
-
-    <footer>
-      <p>💻 Made by Discord: Wall3rs</p>
-      <p>Data van <a href="https://servers.fivem.net" target="_blank">FiveM Official API</a></p>
-    </footer>
-  </div>
-
-  <script src="script.js"></script>
+		<div class="table-container">
+			<table>
+				<tr id="table-header" style="background: var(--header-bg)">
+					<th>No.</th>
+					<th>Favorite</th>
+					<th>Id</th>
+					<th>Name</th>
+					<th>Socials</th>
+					<th>Ping</th>
+				</tr>
+				<tbody id="players-body">
+					<tr><td colspan="6">No players loaded.</td></tr>
+				</tbody>
+			</table>
+		</div>
+	</div>
 </body>
 </html>
