@@ -56,8 +56,8 @@
     }
     tr:hover { background: #1b1b1b; }
     td { color: #ddd; }
-    #loading { margin-top: 20px; color: #999; }
-    canvas { max-width: 300px; margin: 0 auto; display: block; }
+    #loading { margin-top: 20px; color: #999; font-size: 16px; }
+    canvas { max-width: 80px; max-height: 80px; margin: 0 auto; display: block; }
     footer { 
       margin-top: 50px; 
       color: #555; 
@@ -66,6 +66,13 @@
       justify-content: center;
       gap: 15px;
       align-items: center;
+    }
+    footer a {
+      color: #0af;
+      text-decoration: none;
+    }
+    footer a:hover {
+      text-decoration: underline;
     }
     .dutch-flag {
       font-size: 18px;
@@ -106,20 +113,25 @@
   </footer>
 
   <script>
-    // Gebruik de browser's user-agent of een standaardwaarde
-    const USER_AGENT = navigator.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
-    const NETHERLANDS_CODES = ["NL", "Netherlands", "NLD", "Nederland"];
+    const API_URL = "https://fivem-sl-api.onrender.com/fetchServersByLocale/NL-nl";
     
     // Functie om bot-score te berekenen
     function aiBotScore(player) {
       let score = 0;
       const name = (player.name || "").toLowerCase();
+      
+      // Check voor missende identifiers
       if (!player.identifiers || player.identifiers.length === 0) score += 1.5;
+      
+      // Check voor verdachte namen
       if (name.includes("player") || name.includes("new") || name.length < 3) score += 1.0;
+      
+      // Check voor verdachte identifiers
       (player.identifiers || []).forEach(id => {
         if (id.startsWith("steam:") && id.length < 15) score += 0.5;
         if (id.startsWith("license:") && id.length < 10) score += 0.5;
       });
+      
       return score;
     }
 
@@ -128,39 +140,21 @@
       return aiBotScore(player) >= 2.0; 
     }
 
-    // Haal ALLE servers op via de officiële FiveM API
+    // Haal Nederlandse servers op via de API
     async function fetchServerList() {
       try {
-        const proxyUrl = "https://api.allorigins.win/raw?url=" + 
-          encodeURIComponent("https://servers-frontend.fivem.net/api/servers/summary/");
-        const res = await fetch(proxyUrl, {
-          headers: { 'User-Agent': USER_AGENT }
-        });
+        const res = await fetch(API_URL);
         
-        if (!res.ok) throw new Error(`API-error: ${res.status}`);
+        if (!res.ok) {
+          throw new Error(`API HTTP error: ${res.status}`);
+        }
+        
         const data = await res.json();
+        console.log("API Response:", data); // Voor debugging
         return data || [];
       } catch (err) {
         console.error("Fout bij het ophalen van serverlijst:", err);
-        return [];
-      }
-    }
-
-    // Haal details van een server op via de officiële API
-    async function fetchServerDetails(cfx) {
-      try {
-        const proxyUrl = "https://api.allorigins.win/raw?url=" + 
-          encodeURIComponent(`https://servers-frontend.fivem.net/api/servers/single/${cfx}`);
-        const res = await fetch(proxyUrl, {
-          headers: { 'User-Agent': USER_AGENT }
-        });
-        
-        if (!res.ok) throw new Error(`API-error: ${res.status}`);
-        const data = await res.json();
-        return data?.Data || null;
-      } catch (err) {
-        console.error("Fout bij het ophalen van serverdetails:", err);
-        return null;
+        throw err;
       }
     }
 
@@ -169,96 +163,122 @@
       const loading = document.getElementById("loading");
       const table = document.getElementById("resultsTable");
       const body = document.getElementById("resultsBody");
+      
       body.innerHTML = "";
       loading.style.display = "block";
       table.style.display = "none";
       loading.textContent = "⏳ Nederlandse serverlijst wordt opgehaald...";
 
       try {
-        // 1. Haal alle servers op
+        // 1. Haal alle Nederlandse servers op
         const servers = await fetchServerList();
         
-        // 2. Filter op Nederlandse servers
-        let filtered = servers.filter(s => 
-          s.country && NETHERLANDS_CODES.includes(s.country.toUpperCase())
-        );
-        
-        // 3. Filter op zoekopdracht (indien ingevuld)
-        if (query) {
-          filtered = filtered.filter(s => 
-            (s.cfxServerKey && s.cfxServerKey.toLowerCase().includes(query.toLowerCase())) ||
-            (s.hostname && s.hostname.toLowerCase().includes(query.toLowerCase()))
-          );
+        if (!servers || servers.length === 0) {
+          loading.textContent = "❌ Geen servers gevonden.";
+          return;
         }
 
-        // 4. Sorteer: eerst op spelersaantallen (hoog naar laag), dan op servernaam (A-Z)
+        console.log(`Totaal aantal servers opgehaald: ${servers.length}`);
+
+        // 2. Filter op zoekopdracht (indien ingevuld)
+        let filtered = servers;
+        if (query) {
+          filtered = servers.filter(s => {
+            const endpoint = (s.EndPoint || "").toLowerCase();
+            const hostname = (s.Data && s.Data.hostname) ? s.Data.hostname.toLowerCase() : "";
+            return endpoint.includes(query.toLowerCase()) || hostname.includes(query.toLowerCase());
+          });
+        }
+
+        // 3. Sorteer op spelersaantal (hoog naar laag)
         filtered.sort((a, b) => {
-          if ((b.clients || 0) !== (a.clients || 0)) {
-            return (b.clients || 0) - (a.clients || 0);
-          } else {
-            return (a.hostname || "").localeCompare(b.hostname || "");
-          }
+          const playersA = (a.Data && a.Data.clients) ? a.Data.clients : 0;
+          const playersB = (b.Data && b.Data.clients) ? b.Data.clients : 0;
+          return playersB - playersA;
         });
 
-        // 5. Neem de top 10
+        // 4. Neem de top 10
         const top = filtered.slice(0, 10);
+        
+        if (top.length === 0) {
+          loading.textContent = query 
+            ? "❌ Geen servers gevonden met deze zoekopdracht." 
+            : "❌ Geen servers beschikbaar.";
+          return;
+        }
+
         let rank = 1;
 
-        // 6. Laad details per server
-        for (const s of top) {
-          const server = await fetchServerDetails(s.cfxServerKey);
-          if (!server || !server.players) {
-            console.warn(`Geen spelergegevens gevonden voor: ${s.hostname}`);
+        // 5. Verwerk elke server
+        for (const server of top) {
+          if (!server.Data) {
+            console.warn("Server zonder Data gevonden:", server);
             continue;
           }
 
-          const players = server.players || [];
+          const data = server.Data;
+          const players = data.players || [];
+          const hostname = data.hostname || "Onbekend";
+          const cfxCode = server.EndPoint || "N/A";
+          
+          // Bereken bots
           let bots = 0;
-          players.forEach(p => { if (aiIsBot(p)) bots++; });
+          players.forEach(p => { 
+            if (aiIsBot(p)) bots++; 
+          });
+          
           const real = players.length - bots;
-          const botPercent = ((bots / (players.length || 1)) * 100).toFixed(1);
+          const botPercent = players.length > 0 ? ((bots / players.length) * 100).toFixed(1) : "0.0";
 
-          // 7. Voeg rij toe aan tabel
+          // 6. Voeg rij toe aan tabel
           const row = document.createElement("tr");
           const canvasId = `chart-${rank}`;
           row.innerHTML = `
             <td>${rank}</td>
-            <td>${server.hostname || s.hostname}</td>
-            <td>${s.cfxServerKey}</td>
+            <td>${hostname}</td>
+            <td>${cfxCode}</td>
             <td>${players.length}</td>
             <td style="color:#0f0;">${real}</td>
             <td style="color:#f33;">${bots}</td>
             <td>${botPercent}%</td>
-            <td><canvas id="${canvasId}"></canvas></td>
+            <td><canvas id="${canvasId}" width="80" height="80"></canvas></td>
           `;
           body.appendChild(row);
 
-          // 8. Voeg grafiek toe
-          new Chart(document.getElementById(canvasId).getContext('2d'), {
-            type: 'doughnut',
-            data: {
-              labels: ['Echte spelers', 'Bots'],
-              datasets: [{
-                data: [real, bots],
-                backgroundColor: ['#0f0', '#f33']
-              }]
-            },
-            options: {
-              plugins: { legend: { display: false } },
-              responsive: true,
-              maintainAspectRatio: false
-            }
-          });
+          // 7. Voeg grafiek toe
+          const ctx = document.getElementById(canvasId);
+          if (ctx) {
+            new Chart(ctx.getContext('2d'), {
+              type: 'doughnut',
+              data: {
+                labels: ['Echte spelers', 'Bots'],
+                datasets: [{
+                  data: [real, bots],
+                  backgroundColor: ['#0f0', '#f33'],
+                  borderWidth: 0
+                }]
+              },
+              options: {
+                plugins: { 
+                  legend: { display: false },
+                  tooltip: { enabled: true }
+                },
+                responsive: true,
+                maintainAspectRatio: true
+              }
+            });
+          }
 
           rank++;
         }
 
-        // 9. Toon resultaten
+        // 8. Toon resultaten
         loading.style.display = "none";
         table.style.display = "table";
+        
       } catch (err) {
         console.error("Fout in loadTopServers():", err);
-        loading.textContent = "❌ Er is een fout opgetreden bij het ophalen van data. Probeer het later opnieuw of controleer de console voor details.";
+        loading.textContent = "❌ Er is een fout opgetreden bij het ophalen van data. Controleer de console voor details.";
       }
     }
 
@@ -268,8 +288,17 @@
       loadTopServers(q);
     }
 
-    // Laad automatisch bij opstarten
-    document.addEventListener("DOMContentLoaded", loadTopServers);
+    // Enter-toets ondersteuning voor zoeken
+    document.addEventListener("DOMContentLoaded", () => {
+      document.getElementById("searchInput").addEventListener("keypress", (e) => {
+        if (e.key === "Enter") {
+          search();
+        }
+      });
+      
+      // Laad automatisch bij opstarten
+      loadTopServers();
+    });
   </script>
 </body>
 </html>
