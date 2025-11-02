@@ -1,6 +1,3 @@
-Hier is de verbeterde versie van je Botchecker-tool die de nieuwe API gebruikt voor Nederlandse servers:
-
-```html
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -239,29 +236,3 @@ Hier is de verbeterde versie van je Botchecker-tool die de nieuwe API gebruikt v
   </script>
 </body>
 </html>
-```
-
-### 🔑 Belangrijke verbeteringen:
-1. **Nieuwe API-integratie**:
-   - Gebruikt nu `https://fivem-sl-api.onrender.com` voor het ophalen van Nederlandse servers
-   - Specifiek: `fetchServersByLocale/NL-nl` voor het filteren op Nederlandse servers
-   - En `fetchServerByEndPoint/` voor gedetailleerde spelergegevens per server
-
-2. **Betrouwbaardere proxy**:
-   - Vervangen `corsproxy.io` door `api.allorigins.win` (minder storingen)
-   - Toegevoegd `User-Agent` header om blokkades te voorkomen
-
-3. **Verbeterde Nederlandse focus**:
-   - Titel en teksten aangepast voor Nederlandse gebruikers
-   - Nederlandse vlag in de header en footer
-   - Specifieke melding "Nederlandse serverlijst wordt opgehaald..."
-
-4. **Efficiëntere data-ophaling**:
-   - Combineert overzichts- en detailgegevens in één workflow
-   - Betere foutafhandeling en gebruikersfeedback
-
-### ⚠️ Let op:
-- De nieuwe API moet **spelersgegevens retourneren** in het `players`-veld van `fetchServerByEndPoint`. Als dit niet het geval is, moet je de botdetectie aanpassen.
-- Als de API traag is of fouten geeft, kan dit komen door rate limiting. Overweeg dan om een caching-mechanisme toe te voegen.
-
-Laat me weten als je nog verdere aanpassingen wilt! 😊
