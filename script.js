@@ -1,168 +1,92 @@
-const BASE_URL = 'https://servers-frontend.fivem.net/api/servers';
-const ALL_SERVERS_URL = `${BASE_URL}/streamRedir/`;
+const API_BASE_URL = 'https://servers-frontend.fivem.net/api';
+const serverIdInput = document.getElementById('server-id');
+const serverButton = document.getElementById('server-id-button');
+const serverName = document.getElementById('server-name');
+const serverIcon = document.getElementById('server-icon');
+const serverPlayers = document.getElementById('server-players');
+const playersBody = document.getElementById('players-body');
+const loader = document.getElementById('loader');
 
-let allServers = [];
-let currentQuery = "";
+let currentPlayers = [];
 
-// Bot-check functies
-function calculateBotScore(player) {
-  let score = 0;
-  const name = (player.name || "").toLowerCase();
-  const identifiers = player.identifiers || [];
+// Optional: known Dutch servers
+const DUTCH_SERVER_IDS = ['abcd1234', 'nlserver01'];
 
-  if (identifiers.length === 0) score += 2.0;
+serverButton.addEventListener('click', () => {
+	const serverId = serverIdInput.value.trim();
+	if (!serverId) return alert('Voer een server ID in!');
+	fetchServer(serverId);
+});
 
-  const suspiciousNames = ['player','new','test','bot','fake','unknown'];
-  if (suspiciousNames.some(s => name.includes(s)) || name.length < 3) score += 1.0;
+async function fetchServer(serverId) {
+	showLoader(true);
+	try {
+		if (!/^[a-zA-Z0-9]+$/.test(serverId)) throw new Error('Invalid server ID.');
 
-  let hasSteam = false;
-  let hasLicense = false;
+		const res = await fetch(`${API_BASE_URL}/servers/single/${serverId}`);
+		const data = await res.json();
 
-  identifiers.forEach(id => {
-    if (id.startsWith("steam:")) { hasSteam = true; if(id.length<20) score+=0.5; }
-    if (id.startsWith("license:")) { hasLicense = true; if(id.length<20) score+=0.5; }
-    if (id.startsWith("ip:")) score+=0.3;
-  });
+		if (!data.Data) throw new Error('Server not found.');
+		
+		// Botchecker: Dutch filter
+		const lang = (data.Data.vars?.locale || data.Data.vars?.language || '').toLowerCase();
+		const isDutch = lang === 'nl' || DUTCH_SERVER_IDS.includes(serverId);
 
-  if(!hasSteam && !hasLicense && identifiers.length>0) score+=1.0;
+		if (!isDutch) {
+			alert('Deze server is geen Nederlandse server.');
+			showLoader(false);
+			return;
+		}
 
-  return score;
+		setServerInfo(serverId, data.Data);
+		renderPlayers(data.Data.players || []);
+	} catch (err) {
+		console.error(err);
+		alert(err.message);
+	} finally {
+		showLoader(false);
+	}
 }
 
-function isBot(player) {
-  return calculateBotScore(player) >= 2.0;
+function setServerInfo(serverId, data) {
+	serverName.textContent = data.hostname;
+	const iconUrl = `https://servers-live.fivem.net/servers/icon/${serverId}/${data.iconVersion}.png`;
+	serverIcon.src = iconUrl;
+	serverPlayers.textContent = `${data.clients}/${data.svMaxclients ?? data.sv_maxclients ?? 0} spelers`;
 }
 
-// Render tabelrij
-function renderServerRow(server, rank) {
-  const tbody = document.getElementById("tableBody");
-  const canvasId = `chart-${rank}`;
-  let botClass = "low-bots";
-  if(server.botPercent>50) botClass="high-bots";
-  else if(server.botPercent>20) botClass="medium-bots";
+function renderPlayers(players) {
+	playersBody.innerHTML = '';
+	if (!players.length) {
+		playersBody.innerHTML = '<tr><td colspan="6">Geen spelers online.</td></tr>';
+		return;
+	}
 
-  const row = document.createElement("tr");
-  row.innerHTML = `
-    <td>${rank}</td>
-    <td><a href="fivem://connect/${server.EndPoint}" class="server-link">${server.hostname}</a></td>
-    <td>${server.EndPoint}</td>
-    <td>${server.totalPlayers}</td>
-    <td>${server.realPlayers}</td>
-    <td>${server.bots}</td>
-    <td><span class="bot-percent ${botClass}">${server.botPercent}%</span></td>
-    <td><canvas id="${canvasId}" width="80" height="80"></canvas></td>
-    <td><span class="status-badge status-online">✓ Analyzed</span></td>
-  `;
-  tbody.appendChild(row);
+	currentPlayers = players.map(p => ({
+		name: p.name,
+		id: p.id,
+		ping: p.ping,
+		steam: (p.identifiers || []).find(i => i.startsWith('steam:'))?.replace('steam:', ''),
+		discord: (p.identifiers || []).find(i => i.startsWith('discord:'))?.replace('discord:', '')
+	}));
 
-  const ctx = document.getElementById(canvasId);
-  if(ctx && server.totalPlayers>0){
-    new Chart(ctx.getContext('2d'), {
-      type:'doughnut',
-      data:{
-        labels:['Echt','Bots'],
-        datasets:[{data:[server.realPlayers,server.bots],backgroundColor:['#00ff00','#ff3333'],borderWidth:2,borderColor:'#0a0a0a'}]
-      },
-      options:{plugins:{legend:{display:false},tooltip:{enabled:false}},responsive:true,maintainAspectRatio:true}
-    });
-  }
+	currentPlayers.forEach((player, index) => {
+		const tr = document.createElement('tr');
+		tr.innerHTML = `
+			<td>${index + 1}</td>
+			<td><img src="img/empty-star.svg" alt="Favorite"></td>
+			<td>${player.id}</td>
+			<td>${player.name}</td>
+			<td>
+				${player.steam ? `<a href="https://steamcommunity.com/profiles/${player.steam}" target="_blank"><img src="img/steam.svg" alt="Steam"></a>` : ''}
+				${player.discord ? `<a href="https://discord.com/users/${player.discord}" target="_blank"><img src="img/discord.svg" alt="Discord"></a>` : ''}
+			</td>
+			<td>${player.ping}ms</td>
+		`;
+		playersBody.appendChild(tr);
+	});
 }
 
-// Fetch alle servers (stream)
-async function loadServers(query="") {
-  const loading = document.getElementById("loading");
-  const tableContainer = document.getElementById("tableContainer");
-  const statsBar = document.getElementById("statsBar");
-  const tbody = document.getElementById("tableBody");
-  const refreshBtn = document.getElementById("refreshBtn");
-  const searchBtn = document.getElementById("searchBtn");
-
-  loading.style.display = "block";
-  tableContainer.style.display = "none";
-  statsBar.style.display = "none";
-  tbody.innerHTML = "";
-  refreshBtn.disabled = true; searchBtn.disabled = true;
-  allServers = [];
-
-  try {
-    const res = await fetch(ALL_SERVERS_URL);
-    if(!res.body) throw new Error("Geen body stream beschikbaar");
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let rank = 1;
-
-    while(true){
-      const { done, value } = await reader.read();
-      if(done) break;
-
-      const chunk = decoder.decode(value, {stream:true});
-      const lines = chunk.split("\n").filter(l=>l.trim());
-      for(const line of lines){
-        try {
-          const srv = JSON.parse(line);
-          const data = srv.Data;
-          if(!data || !data.vars || data.vars.locale !== "NL-nl") continue;
-
-          const players = data.players || [];
-          let bots=0, real=0;
-          players.forEach(p=>isBot(p)?bots++:real++);
-          const total = players.length;
-          const botPercent = total>0 ? Math.round((bots/total)*100) : 0;
-
-          const serverObj = {
-            hostname: data.hostname || "Onbekend",
-            EndPoint: srv.EndPoint,
-            totalPlayers: total,
-            realPlayers: real,
-            bots: bots,
-            botPercent: botPercent
-          };
-
-          // filter op zoekterm
-          if(query && !(srv.EndPoint.toLowerCase().includes(query.toLowerCase()) || (data.hostname||"").toLowerCase().includes(query.toLowerCase()))) continue;
-
-          allServers.push(serverObj);
-          renderServerRow(serverObj, rank);
-          rank++;
-        } catch(e){
-          console.error("Fout bij verwerken server line:", e);
-        }
-      }
-    }
-
-    if(allServers.length===0){
-      loading.innerHTML="<p>❌ Geen Nederlandse servers gevonden</p>";
-    } else {
-      loading.style.display="none";
-      tableContainer.style.display="block";
-      statsBar.style.display="flex";
-
-      const totalPlayers = allServers.reduce((a,s)=>a+s.totalPlayers,0);
-      const realPlayers = allServers.reduce((a,s)=>a+s.realPlayers,0);
-      const totalBots = allServers.reduce((a,s)=>a+s.bots,0);
-
-      document.getElementById("totalServers").textContent = allServers.length;
-      document.getElementById("analyzedServers").textContent = allServers.length;
-      document.getElementById("totalPlayers").textContent = totalPlayers;
-      document.getElementById("realPlayers").textContent = realPlayers;
-      document.getElementById("totalBots").textContent = totalBots;
-    }
-
-  } catch(err){
-    console.error(err);
-    loading.innerHTML = "<p>❌ Fout bij het ophalen van servers</p>";
-  }
-
-  refreshBtn.disabled = false;
-  searchBtn.disabled = false;
+function showLoader(visible) {
+	loader.style.display = visible ? 'flex' : 'none';
 }
-
-function search(){
-  currentQuery = document.getElementById("searchInput").value.trim();
-  loadServers(currentQuery);
-}
-
-document.getElementById("refreshBtn").addEventListener("click",()=>loadServers());
-document.getElementById("searchBtn").addEventListener("click",search);
-window.addEventListener("DOMContentLoaded",()=>loadServers());
